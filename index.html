@@ -144,7 +144,6 @@
     @media (max-width: 700px) {
       .container {
         height: auto;
-        min-height: 0;
         flex-direction: column;
       }
 
@@ -176,7 +175,7 @@
       </div>
 
       <div class="search-row">
-        <input id="keyword" placeholder="장소 또는 지역 검색">
+        <input id="keyword" placeholder="검색할 장소 입력">
         <button class="main-btn" id="searchBtn">검색</button>
       </div>
 
@@ -188,7 +187,7 @@
       <div class="tools">
         <strong>🧭 지도 도구</strong>
         <p style="font-size:13px;color:#666">
-          거리 측정은 시작 버튼을 누른 뒤 지도에서 지점을 차례로 클릭하세요.
+          거리 측정 시작을 누르고 지도에서 지점을 클릭하세요.
           마우스 오른쪽 버튼을 누르면 측정이 끝납니다.
         </p>
 
@@ -208,14 +207,12 @@
 
   <script>
     kakao.maps.load(function () {
-      // 지도와 장소 검색 객체 생성
       const map = new kakao.maps.Map(document.getElementById("map"), {
         center: new kakao.maps.LatLng(37.6584, 126.8320),
         level: 4
       });
 
       const places = new kakao.maps.services.Places(map);
-      const geocoder = new kakao.maps.services.Geocoder();
       const infoWindow = new kakao.maps.InfoWindow({ zIndex: 3 });
 
       let currentCategory = "park";
@@ -226,6 +223,7 @@
       let measureLine = null;
       let measureMarkers = [];
       let roadviewVisible = false;
+      let roadview = null;
 
       const status = document.getElementById("status");
       const results = document.getElementById("results");
@@ -235,29 +233,16 @@
       const parkTab = document.getElementById("parkTab");
       const waterTab = document.getElementById("waterTab");
 
-      // 검색할 키워드 설정
+      // 탭에 따라 검색어 결정
       function getSearchKeyword() {
         const input = document.getElementById("keyword").value.trim();
 
-        if (input) {
-          if (currentCategory === "water" &&
-              !input.includes("음수대") &&
-              !input.includes("식수대")) {
-            return input + " 음수대";
-          }
-
-          if (currentCategory === "park" &&
-              !input.includes("공원")) {
-            return input + " 공원";
-          }
-
-          return input;
-        }
+        if (input) return input;
 
         return currentCategory === "park" ? "공원" : "음수대";
       }
 
-      // 기존 검색 마커 삭제
+      // 검색 마커 삭제
       function clearSearchMarkers() {
         markers.forEach(function (marker) {
           marker.setMap(null);
@@ -267,11 +252,9 @@
         infoWindow.close();
       }
 
-      // 공원 또는 음수대 검색
+      // 카카오맵 키워드 검색
       function searchPlaces() {
         const keyword = getSearchKeyword();
-
-        const center = currentPosition || map.getCenter();
 
         status.textContent = "'" + keyword + "' 검색 중...";
         results.innerHTML = "";
@@ -283,22 +266,20 @@
             if (searchStatus === kakao.maps.services.Status.OK) {
               displayPlaces(data);
               status.textContent =
-                "검색 결과 " + data.length + "개 · 페이지 " +
-                pagination.current + " / " + pagination.last;
-
+                "검색 결과 " + data.length + "개";
               displayPagination(pagination);
             } else if (
               searchStatus === kakao.maps.services.Status.ZERO_RESULT
             ) {
               status.textContent =
-                "검색 결과가 없습니다. 다른 키워드로 검색해 보세요.";
+                "검색 결과가 없습니다. 카카오맵에 해당 장소가 등록되어 있는지 확인해 주세요.";
             } else {
               status.textContent =
                 "검색 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.";
             }
           },
           {
-            location: center,
+            location: currentPosition || map.getCenter(),
             radius: 20000,
             sort: kakao.maps.services.SortBy.DISTANCE,
             size: 15
@@ -306,7 +287,7 @@
         );
       }
 
-      // 검색 결과 목록과 마커 표시
+      // 검색 결과 목록과 지도 마커 표시
       function displayPlaces(data) {
         const bounds = new kakao.maps.LatLngBounds();
 
@@ -334,7 +315,9 @@
 
           const address = document.createElement("small");
           address.textContent =
-            place.road_address_name || place.address_name || "주소 정보 없음";
+            place.road_address_name ||
+            place.address_name ||
+            "주소 정보 없음";
           item.appendChild(address);
 
           if (place.phone) {
@@ -350,9 +333,11 @@
           link.target = "_blank";
           link.rel = "noopener noreferrer";
           link.textContent = "카카오맵에서 보기";
+
           link.addEventListener("click", function (event) {
             event.stopPropagation();
           });
+
           item.appendChild(link);
 
           item.addEventListener("click", function () {
@@ -369,7 +354,7 @@
         }
       }
 
-      // 마커 정보창 표시
+      // 마커 정보창
       function showInfo(place, marker) {
         const content =
           '<div style="padding:10px;font-size:13px;max-width:220px;">' +
@@ -383,7 +368,6 @@
         infoWindow.open(map, marker);
       }
 
-      // 정보창에 들어가는 텍스트 안전 처리
       function escapeHTML(value) {
         return String(value || "").replace(/[&<>"']/g, function (char) {
           return {
@@ -420,18 +404,21 @@
         results.appendChild(pageBox);
       }
 
-      // 탭 변경
+      // 공원 탭
       parkTab.addEventListener("click", function () {
         currentCategory = "park";
         parkTab.classList.add("active");
         waterTab.classList.remove("active");
+        document.getElementById("keyword").value = "";
         searchPlaces();
       });
 
+      // 음수대 탭: 검색어는 정확히 '음수대'
       waterTab.addEventListener("click", function () {
         currentCategory = "water";
         waterTab.classList.add("active");
         parkTab.classList.remove("active");
+        document.getElementById("keyword").value = "";
         searchPlaces();
       });
 
@@ -445,11 +432,12 @@
         }
       );
 
-      // 현재 위치 찾기
+      // 현재 위치
       document.getElementById("locationBtn").addEventListener(
         "click", function () {
           if (!navigator.geolocation) {
-            status.textContent = "이 브라우저는 위치 기능을 지원하지 않습니다.";
+            status.textContent =
+              "이 브라우저는 위치 기능을 지원하지 않습니다.";
             return;
           }
 
@@ -464,6 +452,8 @@
 
               map.setCenter(currentPosition);
               map.setLevel(4);
+
+              searchPlaces();
 
               const marker = new kakao.maps.Marker({
                 map: map,
@@ -484,13 +474,11 @@
                 map: map
               });
 
-              // 현재 위치 원도 검색 마커와 함께 관리
               markers.push({
-                setMap: function () { circle.setMap(null); }
+                setMap: function () {
+                  circle.setMap(null);
+                }
               });
-
-              status.textContent = "현재 위치를 찾았습니다.";
-              searchPlaces();
             },
             function () {
               status.textContent =
@@ -509,13 +497,12 @@
           clearMeasureDrawing();
 
           distanceInfo.textContent =
-            "지도에서 출발 지점부터 차례로 클릭하세요. 오른쪽 클릭으로 종료합니다.";
+            "지도에서 지점을 차례로 클릭하세요. 오른쪽 클릭으로 종료합니다.";
 
           map.setCursor("crosshair");
         }
       );
 
-      // 거리 측정 선과 점 삭제
       function clearMeasureDrawing() {
         if (measureLine) measureLine.setMap(null);
         measureLine = null;
@@ -527,7 +514,7 @@
         measureMarkers = [];
       }
 
-      // 지도 클릭 시 거리 측정
+      // 지도 클릭으로 측정
       kakao.maps.event.addListener(map, "click", function (mouseEvent) {
         if (!measuring) return;
 
@@ -575,7 +562,8 @@
             "최종 거리: " + formatDistance(meters) +
             " · 도보 약 " + Math.ceil(meters / 67) + "분";
         } else {
-          distanceInfo.textContent = "지점을 2개 이상 선택해야 합니다.";
+          distanceInfo.textContent =
+            "지점을 2개 이상 선택해야 합니다.";
         }
       });
 
@@ -585,7 +573,7 @@
           : meters + "m";
       }
 
-      // 거리 측정 초기화
+      // 측정 초기화
       document.getElementById("clearBtn").addEventListener(
         "click", function () {
           measuring = false;
@@ -596,7 +584,7 @@
         }
       );
 
-      // 로드뷰 표시 / 숨기기
+      // 로드뷰 켜기 / 끄기
       document.getElementById("roadviewBtn").addEventListener(
         "click", function () {
           roadviewVisible = !roadviewVisible;
@@ -607,10 +595,13 @@
           }
 
           roadviewBox.style.display = "block";
+          roadviewBox.textContent = "";
 
-          const roadview = new kakao.maps.Roadview(roadviewBox);
+          if (!roadview) {
+            roadview = new kakao.maps.Roadview(roadviewBox);
+          }
+
           const roadviewClient = new kakao.maps.RoadviewClient();
-
           const center = map.getCenter();
 
           roadviewClient.getNearestPanoId(
